@@ -1,0 +1,19 @@
+app:
+  auth:
+    jwt:
+      secret: test-jwt-secret-0123456789abcdef-0123456789
+    otp:
+      secret: test-otp-secret-0123456789abcdef-0123456789
+  notification:
+    # tests read OTPs from notification_outbox before it is redacted
+    dispatch-enabled: false
+  rate-limit:
+    rules:
+      register-ip:         { limit: 10000, window: 1m }
+      register-identifier: { limit: 10000, window: 1m }
+      otp-resend-ip:       { limit: 10000, window: 1m }
+      otp-verify-ip:       { limit: 10000, window: 1m }
+      login-ip:            { limit: 10000, window: 1m }
+      login-identifier:    { limit: 10000, window: 1m }
+      refresh-ip:          { limit: 10000, window: 1m }
+      test-scope:          { limit: 3, window: 1m }

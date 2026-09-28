@@ -1,0 +1,138 @@
+name: flashsale
+
+x-app: &app
+  build: .
+  image: flashsale-service:local
+  environment:
+    SPRING_PROFILES_ACTIVE: docker
+    DB_HOST: postgres
+    DB_PORT: 5432
+    DB_NAME: ${DB_NAME:-flashsale}
+    DB_USER: ${DB_USER:-flashsale}
+    DB_PASSWORD: ${DB_PASSWORD:-flashsale}
+    DB_POOL_SIZE: ${DB_POOL_SIZE:-30}
+    REDIS_HOST: redis
+    REDIS_PORT: 6379
+    REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    JWT_SECRET: ${JWT_SECRET:-dev-only-jwt-secret-change-me-0123456789abcdef}
+    OTP_SECRET: ${OTP_SECRET:-dev-only-otp-secret-change-me-0123456789abcdef}
+    NOTIFICATION_MOCK_LOG_CONTENT: ${NOTIFICATION_MOCK_LOG_CONTENT:-true}
+    OTP_PLAIN_STORAGE: ${OTP_PLAIN_STORAGE:-true}        # dev: readable OTP in Redis
+    WALLET_INITIAL_BALANCE: ${WALLET_INITIAL_BALANCE:-1000000}
+    OUTBOX_POLL_INTERVAL: ${OUTBOX_POLL_INTERVAL:-500ms}
+    OUTBOX_BATCH_SIZE: ${OUTBOX_BATCH_SIZE:-100}
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  app:
+    <<: *app
+    ports:
+      - "${APP_PORT:-8080}:8080"
+
+  # --- Multi-instance demo: docker compose --profile scale up -d ---
+  app-2:
+    <<: *app
+    profiles: ["scale"]
+
+  nginx:
+    image: nginx:1.27-alpine
+    profiles: ["scale"]
+    ports:
+      - "8088:80"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      app:
+        condition: service_healthy
+      app-2:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_NAME:-flashsale}
+      POSTGRES_USER: ${DB_USER:-flashsale}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-flashsale}
+      TZ: UTC
+    ports:
+      - "${DB_PORT_HOST:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT_HOST:-6379}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # --- Load test: docker compose --profile loadtest run --rm k6 ---
+  k6:
+    image: grafana/k6:latest
+    profiles: ["loadtest"]
+    volumes:
+      - ./docker/k6:/scripts:ro
+    environment:
+      BASE_URL: http://app:8080
+    command: ["run", "/scripts/smoke.js"]
+    depends_on:
+      app:
+        condition: service_healthy
+
+  # --- Dev tools (web UIs): docker compose --profile tools up -d ---
+  # Bound to 127.0.0.1 only; dev credentials.
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    profiles: ["tools"]
+    ports:
+      - "127.0.0.1:5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@flashsale.dev
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    volumes:
+      - ./docker/pgadmin/servers.json:/pgadmin4/servers.json:ro
+      - pgadmindata:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  redisinsight:
+    image: redis/redisinsight:latest
+    profiles: ["tools"]
+    ports:
+      - "127.0.0.1:5540:5540"
+    environment:
+      RI_PRE_SETUP_DATABASES_PATH: /config/databases.json
+      RI_ACCEPT_TERMS_AND_CONDITIONS: "true"
+    volumes:
+      - ./docker/redisinsight/databases.json:/config/databases.json:ro
+      - redisinsightdata:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # --- Future: Kafka (profile "kafka") can be added here without touching core services ---
+
+volumes:
+  pgdata:
+  redisdata:
+  pgadmindata:
+  redisinsightdata:

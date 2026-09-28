@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "flashsale (docker)",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "flashsale",
+      "Username": "flashsale",
+      "SSLMode": "disable"
+    }
+  }
+}

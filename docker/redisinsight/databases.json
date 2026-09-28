@@ -1,0 +1,8 @@
+[
+  {
+    "id": "flashsale-redis",
+    "name": "flashsale-redis",
+    "host": "redis",
+    "port": 6379
+  }
+]
