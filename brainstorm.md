@@ -629,6 +629,32 @@ Security measures:
 - **Rate limits (Redis, per IP / hashed identifier):** register, OTP verify/resend, login, refresh → 429 + `Retry-After`.
 - **No sensitive leaks:** RFC 7807 errors with stable `code`, no stack traces, validation lists field names only (never values); DTO `toString()` redacts secrets; PII masked in logs and `/me`; pgjdbc `logServerErrorDetail=false` keeps constraint values out of logs; `correlationId` on every response.
 
+## 2.10 Flash sale buyer flow (implemented)
+
+`GET /api/v1/flash-sales/current` (public; token region wins over `?region=`) — Redis-cached 2 s.
+`POST /api/v1/flash-sales/items/{itemId}/purchase` (buyer, `Idempotency-Key`).
+
+```
+purchase ──▶ rate limit (per user) ──▶ idempotency lookup (replay?) ──▶ item snapshot (region + window pre-check)
+         ──▶ Redis Lua gate  fs:{VN}:user:{uid}:{saleDate} exists? → 409 ALREADY
+                              fs:{VN}:stock:{item} <= 0?          → 409 SOLD_OUT
+                              else DECR stock + SET user key
+         ──▶ DB TX:  UPDATE items SET sold=sold+1 WHERE sold<quota AND now() in window   (row lock, DB clock)
+                     UPDATE wallets SET balance=balance-amt WHERE balance>=amt
+                     INSERT orders (UNIQUE user+idempotency_key)
+                     INSERT user_daily_purchases (PK user+purchase_date)
+                     INSERT wallet_transactions + outbox_events(ORDER_CREATED)
+         ──▶ DB said no → compensate gate (SOLD_OUT: stock=0 | ALREADY: INCR | else INCR + DEL user key)
+reconciler (ShedLock, 15 s): Redis stock := quota - sold for live/upcoming items
+Redis down → gate bypassed, DB alone still correct.
+```
+
+Measured (k6, single instance, laptop): 200 concurrent buyers on quota 5 → exactly 5 orders; 500 req/s mixed load, 0 errors, p95 ≈ 2.3 ms.
+
+Known limitation: if an instance dies between the Redis gate and the DB commit, that buyer's day key stays set
+(false "already purchased" until the region-local day ends); stock is healed by the reconciler. Acceptable
+trade-off: never oversells, may rarely under-serve one user.
+
 # 3. Tech Stack
 
 > Constraint from assignment: **Java + Spring Boot**. Everything else is our choice — picked for correctness under concurrency, multi-instance safety, and "runs with only Docker installed".

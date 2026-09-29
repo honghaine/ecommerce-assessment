@@ -16,4 +16,5 @@ app:
       login-ip:            { limit: 10000, window: 1m }
       login-identifier:    { limit: 10000, window: 1m }
       refresh-ip:          { limit: 10000, window: 1m }
+      purchase-user:       { limit: 10000, window: 1m }
       test-scope:          { limit: 3, window: 1m }

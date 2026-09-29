@@ -3,6 +3,7 @@ package com.flashsale.region.service;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.Currency;
 import java.util.Set;
 
 /**
@@ -14,6 +15,8 @@ public interface RegionService {
     String requireSupported(String code);
 
     ZoneId timezone(String code);
+
+    Currency currency(String code);
 
     /** Region-local calendar date of an instant — the business "day". */
     LocalDate localDate(String code, Instant instant);

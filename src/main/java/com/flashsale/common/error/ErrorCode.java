@@ -21,7 +21,19 @@ public enum ErrorCode {
     ACCOUNT_NOT_VERIFIED(HttpStatus.FORBIDDEN, "Account is not verified"),
     ACCOUNT_LOCKED(HttpStatus.FORBIDDEN, "Account is locked"),
 
+    IDEMPOTENCY_KEY_REQUIRED(HttpStatus.BAD_REQUEST,
+            "Header Idempotency-Key is required (8-64 chars: letters, digits, '-')"),
+
     NOT_FOUND(HttpStatus.NOT_FOUND, "Resource not found"),
+    FLASH_SALE_ITEM_NOT_FOUND(HttpStatus.NOT_FOUND, "Flash sale item not found"),
+
+    FLASH_SALE_NOT_ACTIVE(HttpStatus.CONFLICT, "Flash sale slot is not active"),
+    SOLD_OUT(HttpStatus.CONFLICT, "Flash sale item is sold out"),
+    ALREADY_PURCHASED_TODAY(HttpStatus.CONFLICT, "Only one flash sale product per user per day"),
+    IDEMPOTENCY_KEY_REUSED(HttpStatus.CONFLICT, "Idempotency-Key was already used for another request"),
+
+    INSUFFICIENT_BALANCE(HttpStatus.UNPROCESSABLE_CONTENT, "Insufficient balance"),
+
     METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "Method not allowed"),
     TOO_MANY_REQUESTS(HttpStatus.TOO_MANY_REQUESTS, "Too many requests, please retry later"),
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "Unexpected error");

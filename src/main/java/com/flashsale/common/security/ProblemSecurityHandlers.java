@@ -3,7 +3,9 @@ package com.flashsale.common.security;
 import java.io.IOException;
 
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
+import org.springframework.security.oauth2.server.resource.InvalidBearerTokenException;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.stereotype.Component;
@@ -16,6 +18,7 @@ import com.flashsale.common.error.ProblemDetails;
  * Writes RFC 7807 bodies for authentication (401) and authorization (403) failures
  * raised inside the Spring Security filter chain.
  */
+@Slf4j
 @Component
 public class ProblemSecurityHandlers {
 
@@ -26,7 +29,14 @@ public class ProblemSecurityHandlers {
     }
 
     public AuthenticationEntryPoint authenticationEntryPoint() {
-        return (request, response, ex) -> write(response, ErrorCode.UNAUTHORIZED);
+        return (request, response, ex) -> {
+            if (ex instanceof InvalidBearerTokenException) {
+                // reason only — never the token itself
+                log.info("Rejected bearer token on {} {}: {}", request.getMethod(), request.getRequestURI(),
+                        ex.getMessage());
+            }
+            write(response, ErrorCode.UNAUTHORIZED);
+        };
     }
 
     public AccessDeniedHandler accessDeniedHandler() {

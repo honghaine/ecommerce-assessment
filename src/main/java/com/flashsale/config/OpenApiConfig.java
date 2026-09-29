@@ -15,6 +15,7 @@ public class OpenApiConfig {
     public static final String BEARER = "bearerAuth";
     public static final String TAG_AUTH = "1. Authentication";
     public static final String TAG_USERS = "2. Users";
+    public static final String TAG_FLASH_SALE = "3. Flash Sale";
 
     private static final String DESCRIPTION = """
             Flash-sale backend (Java 25, Spring Boot 4). All errors are RFC 7807 `application/problem+json` \
@@ -29,6 +30,12 @@ public class OpenApiConfig {
             5. Click **Authorize** (top right), paste the access token (without `Bearer`).
             6. Call **`GET /api/v1/users/me`**, then **logout** — the same token is rejected afterwards.
 
+            ### Flash sale (demo data is seeded when `SEED_ENABLED=true`, the Docker default)
+            1. `GET /api/v1/flash-sales/current?region=VN` — pick an `itemId` from the live slot.
+            2. Login as a demo buyer: `buyer0001@demo.flashsale.dev` / `Secret123` (up to `buyer0200`), Authorize.
+            3. `POST /api/v1/flash-sales/items/{itemId}/purchase` with a unique `Idempotency-Key`.
+            4. Buy again (new key) → `409 ALREADY_PURCHASED_TODAY`; same key → `200` replay.
+
             Endpoints without a lock icon are public.
             """;
 
@@ -39,6 +46,7 @@ public class OpenApiConfig {
                 .addSecurityItem(new SecurityRequirement().addList(BEARER))
                 .addTagsItem(new Tag().name(TAG_AUTH).description("Register, OTP verification, login, token refresh, logout"))
                 .addTagsItem(new Tag().name(TAG_USERS).description("Authenticated user endpoints"))
+                .addTagsItem(new Tag().name(TAG_FLASH_SALE).description("Live flash-sale products and purchase"))
                 .components(new Components().addSecuritySchemes(BEARER,
                         new SecurityScheme()
                                 .type(SecurityScheme.Type.HTTP)

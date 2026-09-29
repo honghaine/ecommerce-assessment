@@ -97,9 +97,10 @@ app:
       register-identifier: { limit: 3,  window: 10m }
       otp-resend-ip:       { limit: 10, window: 1m }
       otp-verify-ip:       { limit: 20, window: 1m }
-      login-ip:            { limit: 30, window: 1m }
+      login-ip:            { limit: "${RATE_LIMIT_LOGIN_IP:30}", window: 1m }   # raise for load tests
       login-identifier:    { limit: 5,  window: 1m }
       refresh-ip:          { limit: 60, window: 1m }
+      purchase-user:       { limit: "${RATE_LIMIT_PURCHASE_USER:5}", window: 10s }
 
   wallet:
     initial-balance: ${WALLET_INITIAL_BALANCE:1000000}
@@ -109,6 +110,18 @@ app:
     dispatch-interval-ms: 1000
     batch-size: 50
     mock-log-content: ${NOTIFICATION_MOCK_LOG_CONTENT:false}
+
+  flash-sale:
+    current-cache-ttl: 2s
+    reconcile-interval-ms: 15000
+    reconcile-horizon: 10m
+
+  seed:
+    enabled: ${SEED_ENABLED:false}
+    password: ${SEED_PASSWORD:Secret123}
+    buyers: ${SEED_BUYERS:200}
+    buyer-balance: ${SEED_BUYER_BALANCE:100000000}
+    regions: [VN]
 
   outbox:
     poll-interval: ${OUTBOX_POLL_INTERVAL:500ms}

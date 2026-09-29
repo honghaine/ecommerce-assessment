@@ -3,6 +3,7 @@ package com.flashsale.region.service.impl;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.Currency;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
@@ -40,6 +41,12 @@ public class RegionServiceImpl implements RegionService {
     }
 
     /** Region-local calendar date of an instant — the business "day". */
+    @Override
+    public Currency currency(String code) {
+        return find(code).map(RegionProperties.Region::currency)
+                .orElseThrow(() -> new ApiException(ErrorCode.UNSUPPORTED_REGION));
+    }
+
     @Override
     public LocalDate localDate(String code, Instant instant) {
         return instant.atZone(timezone(code)).toLocalDate();

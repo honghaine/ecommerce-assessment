@@ -45,6 +45,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, PUBLIC_AUTH_ENDPOINTS).permitAll()
                         .requestMatchers(PUBLIC_INFRA_PATHS).permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/flash-sales/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/flash-sales/items/*/purchase").hasRole("USER")
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth -> oauth
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter))

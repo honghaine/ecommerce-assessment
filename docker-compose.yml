@@ -18,6 +18,8 @@ x-app: &app
     OTP_SECRET: ${OTP_SECRET:-dev-only-otp-secret-change-me-0123456789abcdef}
     NOTIFICATION_MOCK_LOG_CONTENT: ${NOTIFICATION_MOCK_LOG_CONTENT:-true}
     OTP_PLAIN_STORAGE: ${OTP_PLAIN_STORAGE:-true}        # dev: readable OTP in Redis
+    SEED_ENABLED: ${SEED_ENABLED:-true}                  # demo accounts, products, today/tomorrow slots
+    RATE_LIMIT_LOGIN_IP: ${RATE_LIMIT_LOGIN_IP:-30}      # set high (e.g. 100000) for k6 load tests
     WALLET_INITIAL_BALANCE: ${WALLET_INITIAL_BALANCE:-1000000}
     OUTBOX_POLL_INTERVAL: ${OUTBOX_POLL_INTERVAL:-500ms}
     OUTBOX_BATCH_SIZE: ${OUTBOX_BATCH_SIZE:-100}
@@ -90,7 +92,7 @@ services:
       - ./docker/k6:/scripts:ro
     environment:
       BASE_URL: http://app:8080
-    command: ["run", "/scripts/smoke.js"]
+    command: ["run", "/scripts/flash-sale.js"]
     depends_on:
       app:
         condition: service_healthy

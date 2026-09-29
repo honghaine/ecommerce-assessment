@@ -63,6 +63,19 @@ public class User {
         return user;
     }
 
+    /** Pre-verified account with a given role (seeding / future admin tooling). */
+    public static User activeWithRole(String region, String email, String passwordHash, UserRole role) {
+        User user = new User();
+        user.region = region;
+        user.email = email;
+        user.passwordHash = passwordHash;
+        user.status = UserStatus.ACTIVE;
+        user.role = role;
+        user.createdAt = Instant.now();
+        user.updatedAt = user.createdAt;
+        return user;
+    }
+
     public void activate() {
         if (status == UserStatus.PENDING) {
             status = UserStatus.ACTIVE;
