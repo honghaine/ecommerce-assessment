@@ -1,6 +1,6 @@
-# Consult: Web MVC + Virtual Threads vs Outbox Poller vs Kafka
+# ADR-001: Web MVC + Virtual Threads, Outbox Poller (Kafka later)
 
-> Status: **for review**, nothing decided until confirmed.
+> Status: **Accepted** — implemented (see "Decision" at the end).
 > Context: FlashSale Service (Java + Spring Boot), 500 TPS target, multi-instance ready, Docker-only dev environment.
 
 ---
@@ -192,9 +192,16 @@ The assignment says *"design thinking, correctness and extensibility over featur
 
 ---
 
-## Part D: Questions for you
+## Decision (accepted)
 
-1. OK with **MVC + virtual threads** (no WebFlux)?
-2. Bump **Java 21 → Java 25 LTS** (no VT pinning, newer, fully supported by Spring Boot)?
-3. **Poller only** for the core, with Kafka documented as the scaling path? Or do you want the **optional Kafka profile** as a bonus?
-4. Poll interval **500 ms**, acceptable eventual-consistency window for inventory sync?
+| Question | Decision | Where in the code |
+|---|---|---|
+| Request model | **Spring Web MVC + virtual threads**, no WebFlux | `spring.threads.virtual.enabled=true` |
+| Java version | **Java 25 LTS** (no virtual-thread pinning on `synchronized`) | `pom.xml`, `Dockerfile` |
+| Event transport | **Transactional outbox + DB poller** only; Kafka documented as the scaling path, no Kafka container | `outbox/` module |
+| Poll interval | **500 ms**, one event per transaction, `FOR UPDATE SKIP LOCKED`, backoff + dead letter after 10 attempts | `OutboxPoller`, `OutboxProcessor` |
+| Kafka seam | `DomainEventPublisher` (domain side) → `outbox_events`; `OutboxDispatcher` (transport side) with `InProcessOutboxDispatcher` today; handlers implement `EventHandler`, deduped by `processed_events` | `outbox/service` |
+
+Consequences observed after implementation: with inventory settled once per slot (not per sale), event volume is one
+event per flash-sale item per slot plus product changes — far below what a DB poller handles; the outbox lag is
+monitored (`outbox_lag_seconds`, "Outbox stuck" alert).

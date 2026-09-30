@@ -1,0 +1,159 @@
+apiVersion: 1
+
+# Alert rules (Grafana unified alerting). Visible under Alerting → Alert rules; firing alerts go to the default
+# contact point. Each rule: A = query, C = threshold on A.
+groups:
+  - orgId: 1
+    name: flashsale
+    folder: FlashSale
+    interval: 1m
+    rules:
+      - uid: fs-high-error-rate
+        title: High 5xx error rate
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: More than 5 % of requests fail with 5xx.
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 300, to: 0 }
+            model:
+              refId: A
+              instant: true
+              expr: (sum(rate(http_server_requests_seconds_count{application="flashsale-service",status=~"5.."}[5m])) or vector(0)) / clamp_min(sum(rate(http_server_requests_seconds_count{application="flashsale-service"}[5m])), 1e-9)
+          - refId: C
+            datasourceUid: __expr__
+            model: { refId: C, type: threshold, expression: A, conditions: [ { evaluator: { type: gt, params: [0.05] } } ] }
+
+      - uid: fs-slow-api
+        title: Slow API (p95 > 500 ms)
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: p95 latency of the API is above 500 ms.
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 300, to: 0 }
+            model:
+              refId: A
+              instant: true
+              expr: histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{application="flashsale-service",uri!~"/actuator.*"}[5m])))
+          - refId: C
+            datasourceUid: __expr__
+            model: { refId: C, type: threshold, expression: A, conditions: [ { evaluator: { type: gt, params: [0.5] } } ] }
+
+      - uid: fs-outbox-stuck
+        title: Outbox stuck (lag > 60 s)
+        condition: C
+        for: 2m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: Events (inventory settlement, product sync) are not being processed.
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 300, to: 0 }
+            model: { refId: A, instant: true, expr: max(outbox_lag_seconds) }
+          - refId: C
+            datasourceUid: __expr__
+            model: { refId: C, type: threshold, expression: A, conditions: [ { evaluator: { type: gt, params: [60] } } ] }
+
+      - uid: fs-outbox-dead-letters
+        title: Outbox dead letters
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: An event failed 10 times — inspect GET /api/v1/admin/outbox?status=FAILED and retry.
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 300, to: 0 }
+            model: { refId: A, instant: true, expr: max(outbox_failed_events) }
+          - refId: C
+            datasourceUid: __expr__
+            model: { refId: C, type: threshold, expression: A, conditions: [ { evaluator: { type: gt, params: [0] } } ] }
+
+      - uid: fs-inventory-drift
+        title: Inventory drift
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: Stock disagrees with the movement ledger — check GET /api/v1/admin/inventory/audit.
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 300, to: 0 }
+            model: { refId: A, instant: true, expr: max(inventory_drift_products) }
+          - refId: C
+            datasourceUid: __expr__
+            model: { refId: C, type: threshold, expression: A, conditions: [ { evaluator: { type: gt, params: [0] } } ] }
+
+      - uid: fs-redis-degraded
+        title: Redis degraded (stock gate bypassed)
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: Redis unavailable — purchases use DB-only checks, rate limiting and the logout blacklist fail open.
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 300, to: 0 }
+            model: { refId: A, instant: true, expr: '(sum(increase(flashsale_gate_total{result="bypassed"}[5m])) or vector(0)) + (sum(increase(redis_fail_open_total[5m])) or vector(0))' }
+          - refId: C
+            datasourceUid: __expr__
+            model: { refId: C, type: threshold, expression: A, conditions: [ { evaluator: { type: gt, params: [0] } } ] }
+
+      - uid: fs-db-pool-saturated
+        title: DB connection pool saturated
+        condition: C
+        for: 2m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: Requests are waiting for database connections.
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 300, to: 0 }
+            model: { refId: A, instant: true, expr: max(hikaricp_connections_pending) }
+          - refId: C
+            datasourceUid: __expr__
+            model: { refId: C, type: threshold, expression: A, conditions: [ { evaluator: { type: gt, params: [0] } } ] }
+
+      - uid: fs-instance-down
+        title: Instance / dependency down
+        condition: C
+        for: 1m
+        noDataState: Alerting
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: An app instance, PostgreSQL or Redis stopped responding to scrapes.
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 300, to: 0 }
+            model: { refId: A, instant: true, expr: 'min(up{job=~"flashsale-app|postgres|redis"}) * min(pg_up) * min(redis_up)' }
+          - refId: C
+            datasourceUid: __expr__
+            model: { refId: C, type: threshold, expression: A, conditions: [ { evaluator: { type: lt, params: [1] } } ] }

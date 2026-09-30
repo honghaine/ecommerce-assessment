@@ -24,10 +24,10 @@ COPY --from=build /workspace/target/extracted/snapshot-dependencies/ ./
 COPY --from=build /workspace/target/extracted/application/ ./
 
 USER app
-EXPOSE 8080
+EXPOSE 8080 8081
 ENV JAVA_OPTS="-XX:MaxRAMPercentage=75 -XX:+UseZGC"
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=5 \
-  CMD wget -qO- http://localhost:8080/actuator/health/readiness || exit 1
+  CMD wget -qO- http://localhost:8081/actuator/health/readiness || exit 1
 
 ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS org.springframework.boot.loader.launch.JarLauncher"]

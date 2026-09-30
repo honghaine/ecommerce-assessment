@@ -12,6 +12,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
+import com.flashsale.common.metrics.BusinessMetrics;
 import com.flashsale.flashsale.model.ItemSnapshot;
 
 /**
@@ -41,12 +42,20 @@ public class StockGate {
             """, Long.class);
 
     private final StringRedisTemplate redis;
+    private final BusinessMetrics metrics;
 
-    public StockGate(StringRedisTemplate redis) {
+    public StockGate(StringRedisTemplate redis, BusinessMetrics metrics) {
         this.redis = redis;
+        this.metrics = metrics;
     }
 
     public Result tryAcquire(ItemSnapshot item, long userId, ZoneId zone) {
+        Result result = evaluate(item, userId, zone);
+        metrics.gate(result.name());
+        return result;
+    }
+
+    private Result evaluate(ItemSnapshot item, long userId, ZoneId zone) {
         try {
             String stockKey = stockKey(item.region(), item.itemId());
             String userKey = userKey(item.region(), userId, item.saleDate());

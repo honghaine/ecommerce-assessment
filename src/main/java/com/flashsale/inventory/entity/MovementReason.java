@@ -5,5 +5,6 @@ public enum MovementReason {
     RESTOCK,
     RESERVE,
     RELEASE,
-    ADJUST
+    ADJUST,
+    WAREHOUSE_SYNC
 }

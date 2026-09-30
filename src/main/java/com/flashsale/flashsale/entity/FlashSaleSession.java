@@ -36,7 +36,8 @@ public class FlashSaleSession {
     @Column(name = "seller_id", updatable = false)
     private Long sellerId;
 
-    @Column(name = "created_by", nullable = false, updatable = false)
+    /** NULL when generated from the region's flash-sale config. */
+    @Column(name = "created_by", updatable = false)
     private Long createdBy;
 
     @Column(nullable = false)
@@ -61,7 +62,13 @@ public class FlashSaleSession {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-    public static FlashSaleSession platformSlot(String region, long createdBy, String name, LocalDate saleDate,
+    /** Platform slot generated from {@code flash_sale_configs}. */
+    public static FlashSaleSession generated(String region, String name, LocalDate saleDate, Instant startAt,
+                                             Instant endAt) {
+        return platformSlot(region, null, name, saleDate, startAt, endAt);
+    }
+
+    public static FlashSaleSession platformSlot(String region, Long createdBy, String name, LocalDate saleDate,
                                                 Instant startAt, Instant endAt) {
         FlashSaleSession session = new FlashSaleSession();
         session.region = region;

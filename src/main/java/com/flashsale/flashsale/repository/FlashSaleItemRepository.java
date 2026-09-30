@@ -13,6 +13,33 @@ import com.flashsale.flashsale.model.ItemSnapshot;
 
 public interface FlashSaleItemRepository extends JpaRepository<FlashSaleItem, Long> {
 
+    boolean existsBySessionIdAndProductId(long sessionId, long productId);
+
+    List<FlashSaleItem> findBySessionIdInOrderBySessionIdAscSellerIdAscIdAsc(List<Long> sessionIds);
+
+    List<FlashSaleItem> findBySellerIdOrderByIdDesc(long sellerId);
+
+    Optional<FlashSaleItem> findByIdAndSellerId(long id, long sellerId);
+
+    List<FlashSaleItem> findBySessionIdIn(List<Long> sessionIds);
+
+    /** Not-yet-started, still active occurrences of a rule — withdrawn when the rule changes. */
+    @Query("""
+            select i from FlashSaleItem i join FlashSaleSession s on s.id = i.sessionId
+            where i.ruleId = :ruleId and s.startAt > :now
+              and i.status in (com.flashsale.flashsale.entity.ItemStatus.APPROVED,
+                               com.flashsale.flashsale.entity.ItemStatus.PENDING)
+            """)
+    List<FlashSaleItem> findFutureActiveByRule(long ruleId, Instant now);
+
+    /** A seller's items in slots overlapping [from, to), with slot times. */
+    @Query("""
+            select i, s from FlashSaleItem i join FlashSaleSession s on s.id = i.sessionId
+            where i.sellerId = :sellerId and s.startAt < :to and s.endAt > :from
+            order by s.startAt, i.id
+            """)
+    List<Object[]> findSellerItems(long sellerId, Instant from, Instant to);
+
     @Query("""
             select new com.flashsale.flashsale.model.ItemSnapshot(
                 i.id, i.region, i.status, i.salePrice, i.productId, i.quota, i.sold,

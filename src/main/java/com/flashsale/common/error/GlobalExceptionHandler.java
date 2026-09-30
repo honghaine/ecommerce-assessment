@@ -3,7 +3,12 @@ package com.flashsale.common.error;
 import java.util.List;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.TransientDataAccessException;
+import org.springframework.data.redis.RedisSystemException;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -62,6 +67,15 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     ResponseEntity<ProblemDetail> handleMethodNotSupported(HttpRequestMethodNotSupportedException ex) {
         return toResponse(ErrorCode.METHOD_NOT_ALLOWED);
+    }
+
+    /** Infrastructure outage (Redis / DB unreachable, reconnecting or timing out) → 503 so clients retry later. */
+    @ExceptionHandler({DataAccessResourceFailureException.class, TransientDataAccessException.class,
+            RedisSystemException.class})
+    ResponseEntity<ProblemDetail> handleUnavailable(DataAccessException ex) {
+        log.warn("Dependency unavailable: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).header(HttpHeaders.RETRY_AFTER, "5")
+                .body(ProblemDetails.of(ErrorCode.SERVICE_UNAVAILABLE));
     }
 
     @ExceptionHandler(Exception.class)

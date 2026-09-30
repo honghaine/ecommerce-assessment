@@ -1,0 +1,29 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Every app instance, discovered through Docker's DNS (app-2 appears only with --profile scale).
+  - job_name: flashsale-app
+    metrics_path: /actuator/prometheus
+    dns_sd_configs:
+      - names: [app, app-2]
+        type: A
+        port: 8081
+        refresh_interval: 15s
+
+  - job_name: postgres
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+  - job_name: redis
+    static_configs:
+      - targets: ['redis-exporter:9121']
+
+  - job_name: tempo
+    static_configs:
+      - targets: ['tempo:3200']
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']

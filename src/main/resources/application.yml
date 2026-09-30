@@ -36,7 +36,8 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
-      timeout: 2s
+      timeout: 500ms            # fail fast: Redis is an accelerator, callers fall back / fail open
+      connect-timeout: 500ms
 
 server:
   port: ${SERVER_PORT:8080}
@@ -47,6 +48,10 @@ server:
     include-message: never
 
 management:
+  # Actuator on its own port: reachable by Prometheus / health checks on the internal network,
+  # never through the load balancer or the public tunnel (which only forward :8080).
+  server:
+    port: ${MANAGEMENT_PORT:8081}
   endpoints:
     web:
       exposure:
@@ -56,6 +61,34 @@ management:
       probes:
         enabled: true
       show-details: never
+  metrics:
+    tags:
+      application: flashsale-service
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        flashsale.purchase.duration: true
+  otlp:
+    metrics:
+      export:
+        enabled: false          # metrics are scraped by Prometheus; OTLP is used for traces only
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING:1.0}
+    export:
+      otlp:
+        enabled: ${TRACING_ENABLED:false}   # true when Tempo runs (docker compose --profile observability)
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTLP_TRACES_ENDPOINT:http://tempo:4318/v1/traces}
+
+# SQL spans in traces: statement text only, never bind values (they can hold emails / phones)
+jdbc:
+  includes: [CONNECTION, QUERY]
+  datasource-proxy:
+    include-parameter-values: false
 
 springdoc:
   api-docs:
@@ -115,6 +148,8 @@ app:
     current-cache-ttl: 2s
     reconcile-interval-ms: 15000
     reconcile-horizon: 10m
+    auto-approve: ${FLASH_SALE_AUTO_APPROVE:true}   # seller nominations skip platform review
+    generate-interval-ms: 600000                    # slot/item generation from DB config + seller rules
 
   seed:
     enabled: ${SEED_ENABLED:false}
@@ -124,5 +159,10 @@ app:
     regions: [VN]
 
   outbox:
-    poll-interval: ${OUTBOX_POLL_INTERVAL:500ms}
+    poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:500}
     batch-size: ${OUTBOX_BATCH_SIZE:100}
+    max-attempts: 10
+
+  integrations:
+    warehouse:
+      api-key: ${WAREHOUSE_API_KEY:}     # empty = warehouse sync API disabled

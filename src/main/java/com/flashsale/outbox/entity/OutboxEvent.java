@@ -1,5 +1,6 @@
 package com.flashsale.outbox.entity;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -64,6 +65,9 @@ public class OutboxEvent implements Persistable<UUID> {
     @Column(name = "processed_at")
     private Instant processedAt;
 
+    @Column(name = "next_attempt_at", nullable = false)
+    private Instant nextAttemptAt;
+
     /** Assigned UUID id: tell Spring Data to INSERT (persist) instead of SELECT + merge. */
     @Transient
     private boolean isNew = true;
@@ -90,6 +94,32 @@ public class OutboxEvent implements Persistable<UUID> {
         event.payload = payloadJson;
         event.status = OutboxStatus.PENDING;
         event.createdAt = Instant.now();
+        event.nextAttemptAt = event.createdAt;
         return event;
+    }
+
+    public void markProcessed() {
+        status = OutboxStatus.PROCESSED;
+        processedAt = Instant.now();
+        lastError = null;
+    }
+
+    /** Exponential backoff (1s, 2s, 4s … capped at 5 min); dead-letters as FAILED after {@code maxAttempts}. */
+    public void markAttemptFailed(String error, int maxAttempts) {
+        attempts++;
+        lastError = error == null ? null : error.substring(0, Math.min(error.length(), 500));
+        if (attempts >= maxAttempts) {
+            status = OutboxStatus.FAILED;
+        } else {
+            long backoffSeconds = Math.min(300, 1L << Math.min(attempts - 1, 9));
+            nextAttemptAt = Instant.now().plus(Duration.ofSeconds(backoffSeconds));
+        }
+    }
+
+    /** Manual retry of a dead-lettered event. */
+    public void requeue() {
+        status = OutboxStatus.PENDING;
+        attempts = 0;
+        nextAttemptAt = Instant.now();
     }
 }

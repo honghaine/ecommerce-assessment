@@ -42,6 +42,9 @@ public class InventoryMovement {
     @Column(name = "ref_event_id", updatable = false)
     private UUID refEventId;
 
+    @Column(name = "idempotency_key", updatable = false)
+    private String idempotencyKey;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -54,6 +57,13 @@ public class InventoryMovement {
         movement.reason = reason;
         movement.refEventId = refEventId;
         movement.createdAt = Instant.now();
+        return movement;
+    }
+
+    public static InventoryMovement withIdempotencyKey(long productId, String region, int delta,
+                                                       MovementReason reason, String idempotencyKey) {
+        InventoryMovement movement = of(productId, region, delta, reason, null);
+        movement.idempotencyKey = idempotencyKey;
         return movement;
     }
 }

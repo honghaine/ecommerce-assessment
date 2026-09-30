@@ -73,6 +73,22 @@ public class Product {
         return product;
     }
 
+    /** Applies non-null fields. */
+    public void update(String name, String description, BigDecimal price, ProductStatus status) {
+        if (name != null) {
+            this.name = name;
+        }
+        if (description != null) {
+            this.description = description;
+        }
+        if (price != null) {
+            this.price = price;
+        }
+        if (status != null) {
+            this.status = status;
+        }
+    }
+
     @PreUpdate
     void touch() {
         updatedAt = Instant.now();

@@ -9,8 +9,10 @@ import org.springframework.validation.annotation.Validated;
 /**
  * @param currentCacheTtl   TTL of the cached "live now" listing per region
  * @param reconcileHorizon  slots starting within this horizon get their Redis stock pre-warmed
+ * @param autoApprove       seller nominations go live without platform review
  */
 @Validated
 @ConfigurationProperties("app.flash-sale")
-public record FlashSaleProperties(@NotNull Duration currentCacheTtl, @NotNull Duration reconcileHorizon) {
+public record FlashSaleProperties(@NotNull Duration currentCacheTtl, @NotNull Duration reconcileHorizon,
+                                  boolean autoApprove) {
 }

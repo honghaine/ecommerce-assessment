@@ -20,6 +20,7 @@ import com.flashsale.auth.support.IdentifierHasher;
 import com.flashsale.auth.support.IdentifierParser;
 import com.flashsale.common.error.ApiException;
 import com.flashsale.common.error.ErrorCode;
+import com.flashsale.common.metrics.BusinessMetrics;
 import com.flashsale.common.ratelimit.RateLimiter;
 import com.flashsale.notification.service.NotificationService;
 import com.flashsale.region.service.RegionService;
@@ -56,13 +57,14 @@ public class AuthServiceImpl implements AuthService {
     private final WalletProperties walletProperties;
     private final TransactionTemplate transactionTemplate;
     private final String dummyPasswordHash;
+    private final BusinessMetrics metrics;
 
     public AuthServiceImpl(IdentifierParser identifierParser, IdentifierHasher identifierHasher,
                        RegionService regionService, UserRepository users, WalletRepository wallets,
                        PasswordEncoder passwordEncoder, OtpService otpService,
                        NotificationService notificationService, TokenService tokenService,
                        RateLimiter rateLimiter, WalletProperties walletProperties,
-                       TransactionTemplate transactionTemplate) {
+                       TransactionTemplate transactionTemplate, BusinessMetrics metrics) {
         this.identifierParser = identifierParser;
         this.identifierHasher = identifierHasher;
         this.regionService = regionService;
@@ -76,6 +78,7 @@ public class AuthServiceImpl implements AuthService {
         this.walletProperties = walletProperties;
         this.transactionTemplate = transactionTemplate;
         this.dummyPasswordHash = passwordEncoder.encode("timing-equalizer-not-a-real-password");
+        this.metrics = metrics;
     }
 
     /**
@@ -100,6 +103,7 @@ public class AuthServiceImpl implements AuthService {
                             passwordHash));
                     wallets.save(Wallet.open(user, walletProperties.initialBalance()));
                     sendOtp(user, identifier);
+                    metrics.registration();
                     log.info("Registered user {} ({})", user.getId(), identifier);
                 } else if (existing.get().isPending()) {
                     sendOtp(existing.get(), identifier);
@@ -124,8 +128,10 @@ public class AuthServiceImpl implements AuthService {
         rateLimiter.check("otp-verify-ip", clientIp);
         Identifier identifier = identifierParser.parse(rawIdentifier);
         if (!otpService.verify(OtpPurpose.REGISTER, identifier, code)) {
+            metrics.otp("rejected");
             throw new ApiException(ErrorCode.INVALID_OTP);
         }
+        metrics.otp("verified");
         transactionTemplate.executeWithoutResult(status -> {
             User user = findUser(identifier).orElseThrow(() -> new ApiException(ErrorCode.INVALID_OTP));
             user.activate();
@@ -143,16 +149,20 @@ public class AuthServiceImpl implements AuthService {
         boolean passwordMatches = passwordEncoder.matches(password,
                 found.map(User::getPasswordHash).orElse(dummyPasswordHash));
         if (found.isEmpty() || !passwordMatches) {
+            metrics.login("invalid_credentials");
             throw new ApiException(ErrorCode.INVALID_CREDENTIALS);
         }
         User user = found.get();
         // Status is revealed only to someone who already proved the password.
         if (user.getStatus() == UserStatus.PENDING) {
+            metrics.login("not_verified");
             throw new ApiException(ErrorCode.ACCOUNT_NOT_VERIFIED);
         }
         if (user.getStatus() == UserStatus.LOCKED) {
+            metrics.login("locked");
             throw new ApiException(ErrorCode.ACCOUNT_LOCKED);
         }
+        metrics.login("success");
         return tokenService.issue(user);
     }
 
@@ -173,8 +183,10 @@ public class AuthServiceImpl implements AuthService {
 
     /** Joins the caller's transaction: the outbox row commits together with the user change. */
     private void sendOtp(User user, Identifier identifier) {
-        otpService.issue(OtpPurpose.REGISTER, identifier).ifPresent(code ->
-                notificationService.enqueue(user.getRegion(), identifier.type().channel(), identifier.value(),
-                        OTP_TEMPLATE, Map.of("code", code, "expiresInSeconds", otpService.ttlSeconds())));
+        otpService.issue(OtpPurpose.REGISTER, identifier).ifPresent(code -> {
+            metrics.otp("issued");
+            notificationService.enqueue(user.getRegion(), identifier.type().channel(), identifier.value(),
+                    OTP_TEMPLATE, Map.of("code", code, "expiresInSeconds", otpService.ttlSeconds()));
+        });
     }
 }

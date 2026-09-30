@@ -7,10 +7,14 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.IdClass;
+import jakarta.persistence.PostLoad;
+import jakarta.persistence.PostPersist;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.springframework.data.domain.Persistable;
 
 /**
  * "1 flash-sale product per user per day": PK (user_id, purchase_date) — the DB rejects a second
@@ -21,7 +25,7 @@ import lombok.NoArgsConstructor;
 @IdClass(UserDailyPurchaseId.class)
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class UserDailyPurchase {
+public class UserDailyPurchase implements Persistable<UserDailyPurchaseId> {
 
     public static final String PK_CONSTRAINT = "pk_user_daily_purchases";
 
@@ -41,6 +45,26 @@ public class UserDailyPurchase {
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
+
+    /** Assigned composite id: always INSERT (the PK violation is the "already bought today" signal), no SELECT first. */
+    @Transient
+    private boolean isNew = true;
+
+    @Override
+    public UserDailyPurchaseId getId() {
+        return new UserDailyPurchaseId(userId, purchaseDate);
+    }
+
+    @Override
+    public boolean isNew() {
+        return isNew;
+    }
+
+    @PostPersist
+    @PostLoad
+    void markNotNew() {
+        isNew = false;
+    }
 
     public static UserDailyPurchase of(long userId, LocalDate purchaseDate, String region, long orderId) {
         UserDailyPurchase purchase = new UserDailyPurchase();

@@ -1,5 +1,7 @@
 package com.flashsale.inventory.service.impl;
 
+import java.util.UUID;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +40,58 @@ public class InventoryServiceImpl implements InventoryService {
         }
         movements.save(InventoryMovement.of(productId, region, -quantity, MovementReason.RESERVE, null));
         return true;
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public boolean restock(long productId, String region, int quantity, String idempotencyKey) {
+        if (movements.existsByProductIdAndIdempotencyKey(productId, idempotencyKey)) {
+            return false;
+        }
+        inventories.restock(productId, quantity);
+        // UNIQUE (product_id, idempotency_key) makes a concurrent duplicate fail the whole transaction.
+        movements.saveAndFlush(InventoryMovement.withIdempotencyKey(productId, region, quantity,
+                MovementReason.RESTOCK, idempotencyKey));
+        return true;
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void settleFlashSaleItem(long itemId, long productId, String region, int quota, int sold, UUID eventId) {
+        int alreadyDeducted = inventories.countDeductedPerOrder(itemId);   // > 0 only for pre-change items
+        int toDeduct = sold - alreadyDeducted;
+        int unsold = quota - sold;
+        if (inventories.settleFlashSale(productId, quota - alreadyDeducted, toDeduct, unsold) == 0) {
+            // Should never happen: the quota was reserved before the slot. Fail → retried, then dead-lettered.
+            throw new IllegalStateException("Reserved stock of product " + productId + " is lower than the quota");
+        }
+        // Ledger: one row carries the event id (UNIQUE ref_event_id); the effect itself is deduped by processed_events.
+        UUID ref = eventId;
+        if (toDeduct > 0) {
+            movements.save(InventoryMovement.of(productId, region, -toDeduct, MovementReason.PURCHASE, ref));
+            ref = null;
+        }
+        if (unsold > 0 || ref != null) {
+            movements.save(InventoryMovement.of(productId, region, unsold, MovementReason.RELEASE, ref));
+        }
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public boolean applyWarehouseDelta(long productId, String region, int delta) {
+        if (inventories.adjustAvailable(productId, delta) == 0) {
+            return false;
+        }
+        movements.save(InventoryMovement.of(productId, region, delta, MovementReason.WAREHOUSE_SYNC, null));
+        return true;
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void release(long productId, String region, int quantity) {
+        if (quantity > 0 && inventories.release(productId, quantity) > 0) {
+            movements.save(InventoryMovement.of(productId, region, quantity, MovementReason.RELEASE, null));
+        }
     }
 
     @Override

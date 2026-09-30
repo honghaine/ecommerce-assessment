@@ -10,7 +10,7 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 /**
- * The oversell guard. One atomic statement checks slot window (DB clock), approval and remaining
+ * The oversell guard. One atomic statement checks slot window (DB clock), approval, product status and remaining
  * quota and increments {@code sold}; row locks serialize concurrent buyers of the same item.
  * Runs on the JPA transaction's connection (JpaTransactionManager exposes it to JDBC).
  */
@@ -20,9 +20,10 @@ public class FlashSaleItemStockDao {
     private static final String CLAIM_ONE = """
             UPDATE flash_sale_items i
             SET sold = i.sold + 1, updated_at = now()
-            FROM flash_sale_sessions s
+            FROM flash_sale_sessions s, products p
             WHERE i.id = :itemId
               AND i.session_id = s.id
+              AND p.id = i.product_id AND p.status = 'ACTIVE'
               AND i.region = :region
               AND i.status = 'APPROVED'
               AND s.status <> 'CANCELLED'

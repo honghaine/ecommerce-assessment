@@ -1,0 +1,59 @@
+// Collects stdout of the flashsale compose containers and ships it to Loki.
+// App logs are JSON: level becomes a label; traceId / correlationId become structured metadata.
+
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+  filter {
+    name   = "label"
+    values = ["com.docker.compose.project=flashsale"]
+  }
+}
+
+discovery.relabel "containers" {
+  targets = discovery.docker.containers.targets
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+}
+
+loki.source.docker "containers" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.relabel.containers.output
+  relabel_rules = discovery.relabel.containers.rules
+  forward_to    = [loki.process.app.receiver]
+}
+
+loki.process "app" {
+  stage.match {
+    selector = "{service=~\"app.*\"}"
+
+    stage.json {
+      expressions = {
+        level         = "level",
+        traceId       = "traceId",
+        spanId        = "spanId",
+        correlationId = "correlationId",
+        logger        = "logger_name",
+      }
+    }
+    stage.labels {
+      values = { level = "" }
+    }
+    stage.structured_metadata {
+      values = { traceId = "", spanId = "", correlationId = "", logger = "" }
+    }
+  }
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

@@ -29,7 +29,8 @@ import com.flashsale.user.repository.WalletTransactionRepository;
  *   <li>debit wallet — atomic {@code UPDATE ... WHERE balance >= amount};</li>
  *   <li>insert order — {@code UNIQUE (user_id, idempotency_key)};</li>
  *   <li>insert daily purchase — PK {@code (user_id, purchase_date)} = 1 product/user/day;</li>
- *   <li>ledger row + {@code ORDER_CREATED} outbox event (inventory sync).</li>
+ *   <li>ledger row + {@code ORDER_CREATED} outbox event (for fulfilment/notifications — inventory is not touched
+ *       during the slot; it is settled once when the slot ends).</li>
  * </ol>
  * Lock order is always item row → wallet row, so concurrent purchases cannot deadlock.
  */

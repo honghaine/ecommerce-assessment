@@ -54,6 +54,9 @@ public class FlashSaleItem {
     @Column(nullable = false)
     private ItemStatus status;
 
+    @Column(name = "rule_id", updatable = false)
+    private Long ruleId;
+
     @Column(name = "reviewed_by")
     private Long reviewedBy;
 
@@ -69,6 +72,12 @@ public class FlashSaleItem {
     /** Auto-approved nomination (approval flow disabled for now). */
     public static FlashSaleItem approved(FlashSaleSession session, long productId, long sellerId,
                                          BigDecimal salePrice, int quota) {
+        return nominate(session, productId, sellerId, salePrice, quota, true);
+    }
+
+    /** Seller nomination: APPROVED when auto-approve is on, otherwise PENDING platform review. */
+    public static FlashSaleItem nominate(FlashSaleSession session, long productId, long sellerId,
+                                         BigDecimal salePrice, int quota, boolean autoApprove) {
         FlashSaleItem item = new FlashSaleItem();
         item.region = session.getRegion();
         item.sessionId = session.getId();
@@ -76,9 +85,26 @@ public class FlashSaleItem {
         item.sellerId = sellerId;
         item.salePrice = salePrice;
         item.quota = quota;
-        item.status = ItemStatus.APPROVED;
+        item.status = autoApprove ? ItemStatus.APPROVED : ItemStatus.PENDING;
         item.createdAt = Instant.now();
         item.updatedAt = item.createdAt;
         return item;
+    }
+
+    /** Occurrence generated from a seller's recurring rule. */
+    public static FlashSaleItem fromRule(FlashSaleSession session, SellerFlashSaleRule rule, boolean autoApprove) {
+        FlashSaleItem item = nominate(session, rule.getProductId(), rule.getSellerId(), rule.getSalePrice(),
+                rule.getQuota(), autoApprove);
+        item.ruleId = rule.getId();
+        return item;
+    }
+
+    public boolean isWithdrawable() {
+        return status == ItemStatus.APPROVED || status == ItemStatus.PENDING;
+    }
+
+    public void withdraw() {
+        status = ItemStatus.WITHDRAWN;
+        updatedAt = Instant.now();
     }
 }

@@ -1,5 +1,6 @@
 package com.flashsale.config;
 
+import org.springframework.boot.security.autoconfigure.actuate.web.servlet.EndpointRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -25,14 +26,12 @@ public class SecurityConfig {
     };
 
     private static final String[] PUBLIC_INFRA_PATHS = {
-            "/actuator/health/**",
             "/v3/api-docs/**",
             "/swagger-ui.html",
             "/swagger-ui/**",
             "/error"
     };
 
-    // TODO: ROLE_SELLER / ROLE_PLATFORM_ADMIN rules when seller & platform APIs are added
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http, JwtAuthenticationConverter jwtAuthenticationConverter,
                                             ProblemSecurityHandlers problemHandlers) throws Exception {
@@ -45,8 +44,14 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, PUBLIC_AUTH_ENDPOINTS).permitAll()
                         .requestMatchers(PUBLIC_INFRA_PATHS).permitAll()
+                        // Actuator lives on the internal management port only (health, info, prometheus)
+                        .requestMatchers(EndpointRequest.toAnyEndpoint()).permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/flash-sales/**").permitAll()
+                        // API-key authenticated in the controller (machine-to-machine, no user JWT)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/integrations/warehouse/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/flash-sales/items/*/purchase").hasRole("USER")
+                        .requestMatchers("/api/v1/seller/**").hasRole("SELLER")
+                        .requestMatchers("/api/v1/admin/**").hasRole("PLATFORM_ADMIN")
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth -> oauth
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter))

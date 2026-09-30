@@ -1,5 +1,6 @@
 package com.flashsale.flashsale.service.impl;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.regex.Pattern;
@@ -11,6 +12,7 @@ import org.springframework.stereotype.Service;
 
 import com.flashsale.common.error.ApiException;
 import com.flashsale.common.error.ErrorCode;
+import com.flashsale.common.metrics.BusinessMetrics;
 import com.flashsale.common.ratelimit.RateLimiter;
 import com.flashsale.flashsale.entity.UserDailyPurchase;
 import com.flashsale.flashsale.model.ItemSnapshot;
@@ -41,10 +43,12 @@ public class PurchaseServiceImpl implements PurchaseService {
     private final StockGate stockGate;
     private final PurchaseTransaction purchaseTransaction;
     private final RegionService regionService;
+    private final BusinessMetrics metrics;
 
     public PurchaseServiceImpl(RateLimiter rateLimiter, OrderRepository orders, FlashSaleItemRepository items,
                                WalletRepository wallets, StockGate stockGate,
-                               PurchaseTransaction purchaseTransaction, RegionService regionService) {
+                               PurchaseTransaction purchaseTransaction, RegionService regionService,
+                               BusinessMetrics metrics) {
         this.rateLimiter = rateLimiter;
         this.orders = orders;
         this.items = items;
@@ -52,10 +56,27 @@ public class PurchaseServiceImpl implements PurchaseService {
         this.stockGate = stockGate;
         this.purchaseTransaction = purchaseTransaction;
         this.regionService = regionService;
+        this.metrics = metrics;
     }
 
+    /** Records outcome + latency of every attempt (success / replay / business error code / error). */
     @Override
     public PurchaseResult purchase(long userId, String userRegion, long itemId, String idempotencyKey) {
+        long start = System.nanoTime();
+        String result = "error";
+        try {
+            PurchaseResult purchase = doPurchase(userId, userRegion, itemId, idempotencyKey);
+            result = purchase.replayed() ? "replay" : "success";
+            return purchase;
+        } catch (ApiException ex) {
+            result = ex.errorCode().name();
+            throw ex;
+        } finally {
+            metrics.purchase(result, Duration.ofNanos(System.nanoTime() - start));
+        }
+    }
+
+    private PurchaseResult doPurchase(long userId, String userRegion, long itemId, String idempotencyKey) {
         if (idempotencyKey == null || !IDEMPOTENCY_KEY.matcher(idempotencyKey).matches()) {
             throw new ApiException(ErrorCode.IDEMPOTENCY_KEY_REQUIRED);
         }

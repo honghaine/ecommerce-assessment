@@ -7,6 +7,6 @@ export const options = { vus: 10, duration: '10s' };
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
 
 export default function () {
-  const res = http.get(`${BASE_URL}/actuator/health`);
+  const res = http.get(`${BASE_URL}/api/v1/flash-sales/current?region=VN`);
   check(res, { 'status is 200': (r) => r.status === 200 });
 }

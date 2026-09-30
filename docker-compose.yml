@@ -20,8 +20,11 @@ x-app: &app
     OTP_PLAIN_STORAGE: ${OTP_PLAIN_STORAGE:-true}        # dev: readable OTP in Redis
     SEED_ENABLED: ${SEED_ENABLED:-true}                  # demo accounts, products, today/tomorrow slots
     RATE_LIMIT_LOGIN_IP: ${RATE_LIMIT_LOGIN_IP:-30}      # set high (e.g. 100000) for k6 load tests
+    WAREHOUSE_API_KEY: ${WAREHOUSE_API_KEY:-}            # empty = warehouse sync API disabled
+    TRACING_ENABLED: ${TRACING_ENABLED:-false}           # true → export traces to Tempo (--profile observability)
+    OTLP_TRACES_ENDPOINT: http://tempo:4318/v1/traces
     WALLET_INITIAL_BALANCE: ${WALLET_INITIAL_BALANCE:-1000000}
-    OUTBOX_POLL_INTERVAL: ${OUTBOX_POLL_INTERVAL:-500ms}
+    OUTBOX_POLL_INTERVAL_MS: ${OUTBOX_POLL_INTERVAL_MS:-500}
     OUTBOX_BATCH_SIZE: ${OUTBOX_BATCH_SIZE:-100}
   depends_on:
     postgres:
@@ -35,6 +38,7 @@ services:
     <<: *app
     ports:
       - "${APP_PORT:-8080}:8080"
+      - "127.0.0.1:8081:8081"   # actuator (health, prometheus) — localhost only
 
   # --- Multi-instance demo: docker compose --profile scale up -d ---
   app-2:
@@ -131,6 +135,96 @@ services:
       redis:
         condition: service_healthy
 
+  # --- Public URL via Cloudflare Quick Tunnel: docker compose --profile tunnel up -d tunnel ---
+  # Prints a random https://*.trycloudflare.com URL in its logs. No account needed; URL changes on restart.
+  # Only the API (app:8080) is exposed — never the DB, Redis or dev tools.
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunnel"]
+    command: ["tunnel", "--no-autoupdate", "--url", "http://app:8080"]
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # --- Observability: docker compose --profile observability up -d  (Grafana → http://localhost:3000) ---
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    profiles: ["observability"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.enable-remote-write-receiver        # Tempo span metrics + optional k6 results
+      - --enable-feature=exemplar-storage         # latency points → trace ids
+      - --storage.tsdb.retention.time=7d
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./docker/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheusdata:/prometheus
+
+  grafana:
+    image: grafana/grafana:12.1.1
+    profiles: ["observability"]
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/1-fs-overview.json
+      DB_USER: ${DB_USER:-flashsale}
+      DB_NAME: ${DB_NAME:-flashsale}
+      DB_PASSWORD: ${DB_PASSWORD:-flashsale}
+    volumes:
+      - ./docker/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./docker/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    depends_on: [prometheus, loki, tempo]
+
+  loki:
+    image: grafana/loki:3.5.3
+    profiles: ["observability"]
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - lokidata:/loki
+
+  alloy:
+    image: grafana/alloy:v1.10.1
+    profiles: ["observability"]
+    command: ["run", "--server.http.listen-addr=0.0.0.0:12345", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
+    volumes:
+      - ./docker/observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on: [loki]
+
+  tempo:
+    image: grafana/tempo:2.8.2
+    profiles: ["observability"]
+    user: "0"
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./docker/observability/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempodata:/var/tempo
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.17.1
+    profiles: ["observability"]
+    environment:
+      DATA_SOURCE_NAME: postgresql://${DB_USER:-flashsale}:${DB_PASSWORD:-flashsale}@postgres:5432/${DB_NAME:-flashsale}?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.75.0
+    profiles: ["observability"]
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
   # --- Future: Kafka (profile "kafka") can be added here without touching core services ---
 
 volumes:
@@ -138,3 +232,7 @@ volumes:
   redisdata:
   pgadmindata:
   redisinsightdata:
+  prometheusdata:
+  grafanadata:
+  lokidata:
+  tempodata:
